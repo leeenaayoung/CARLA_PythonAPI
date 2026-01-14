@@ -1,44 +1,100 @@
-# CARLA 서버 연결
 import carla
 import random
+import pygame
 
-client = carla.Client('localhost', 2000)
+from npc.generate_npc import spawn_npc_vehicles
+from control.keyboard_control import KeyboardController
 
-# 새로운 도시 불러오기, 시뮬레이션 기록
+# client = carla.Client('localhost', 2000)
+# client.set_timeout(10.0) 
 # client.load_world('Town07') 
-client.start_recorder('recording.log')
+# client.start_recorder('recording.log')
 
-# 시뮬레이션을 나타내는 객체 불러오기(한 시뮬레이션 당 하나의 월드만 존재)
-world = client.get_world()
+# 환경 세팅
+def setup_world(client):
+    world = client.get_world()
+    map = world.get_map()
 
-# 디버깅
-print("Connected to:", world.get_map().name)
+    settings = world.get_settings()
+    settings.synchronous_mode = True    # 동기 모드 활성화
+    settings.fixed_delta_seconds = 0.05
+    world.apply_settings(settings)
 
-# 월드의 환경 구성요소 접근
-level = world.get_map()
-weather = world.get_weather()
-blueprints = world.get_blueprint_library()
-for bp in blueprints.filter('vehicle'):
-    print(bp.id)
-    break
+    print("Connected to:", world.get_map().name)
+    return world
 
-vehicle_bp = blueprints.filter('vehicle')[0]
+# TM 설정
+def setup_traffic_manager(client, sync=True, seed=None):
+    tm = client.get_trafficmanager(8000)
 
-# random 차량 스폰
-spawn_point = random.choice(world.get_map().get_spawn_points())
-vehicle = world.spawn_actor(vehicle_bp, spawn_point)
+    if sync:
+        tm.set_synchronous_mode(True)
 
-spectator = world.get_spectator()
-transform = vehicle.get_transform()
+    if seed is not None:
+        tm.set_random_device_seed(seed)
 
-spectator.set_transform(
-    carla.Transform(
-        transform.location + carla.Location(z=10),
-        carla.Rotation(pitch=-30)
+    tm.set_global_distance_to_leading_vehicle(2.5)
+    tm.global_percentage_speed_difference(0.0)
+
+    return tm
+
+# 차량 스폰
+def spawn_vehicle(world):
+    blueprints = world.get_blueprint_library()
+    # vehicle_bp = blueprints.filter('vehicle')[0]
+    vehicle_bp = blueprints.filter('vehicle.tesla.model3')[0]
+    spawn_point = random.choice(world.get_map().get_spawn_points())
+    vehicle = world.spawn_actor(vehicle_bp, spawn_point)
+    return vehicle
+
+#spectator setup
+def setup_spectator(world, vehicle):
+    spectator = world.get_spectator()
+    transform = vehicle.get_transform()
+    spectator.set_transform(
+        carla.Transform(
+            transform.location + carla.Location(x=0,z=1.3),
+            carla.Rotation(pitch=-30)
+        )
     )
-)
 
-print("Vehicle spawned:", vehicle.type_id)
+def main():
+    pygame.init()
+    screen = pygame.display.set_mode((1080, 600))
+    screen.fill((30, 30, 30))
+    pygame.display.flip()
+    clock = pygame.time.Clock()
 
-input("Press Enter to quit")
-vehicle.destroy()
+    client = carla.Client('localhost', 2000)    # CARLA 서버 연결
+    client.set_timeout(10.0)
+
+    world = setup_world(client)  # 환경 세팅
+
+    tm = setup_traffic_manager(client, sync=True, seed=42)
+
+    # ego vehicle
+    ego = spawn_vehicle(world)
+    setup_spectator(world, ego)
+
+    # NPC vehicles
+    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30)
+
+    controller = KeyboardController(ego)
+
+    print("Simulation running... Ctrl+C to quit")
+
+    try:
+        while True:
+            world.tick()
+            controller.tick(clock)
+            clock.tick(60)
+    finally:
+        print("Cleaning up actors...")
+        ego.destroy()
+        for v in npc_vehicles:
+            v.destroy()
+        pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
