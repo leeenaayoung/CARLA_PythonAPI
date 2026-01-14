@@ -1,6 +1,7 @@
 import carla
 import random
 import pygame
+import numpy as np
 
 from npc.generate_npc import spawn_npc_vehicles
 from control.keyboard_control import KeyboardController
@@ -38,6 +39,20 @@ def setup_traffic_manager(client, sync=True, seed=None):
 
     return tm
 
+# 카메라 세팅
+def setup_camera(world, vehicle, width=800, height=600):
+    camera_bp = world.get_blueprint_library().find("sensor.camera.rgb")
+    camera_bp.set_attribute("image_size_x", str(width))
+    camera_bp.set_attribute("image_size_y", str(height))
+    camera_bp.set_attribute("fov", "90")
+
+    camera = world.spawn_actor(
+        camera_bp,
+        carla.Transform(carla.Location(x=1.5, z=2.4)),
+        attach_to=vehicle
+    )
+    return camera
+
 # 차량 스폰
 def spawn_vehicle(world):
     blueprints = world.get_blueprint_library()
@@ -57,6 +72,8 @@ def setup_spectator(world, vehicle):
             carla.Rotation(pitch=-30)
         )
     )
+
+# pygame 렌더링
 
 def main():
     pygame.init()
@@ -81,12 +98,39 @@ def main():
 
     controller = KeyboardController(ego)
 
+    # setup camera
+    camera = setup_camera(world, ego, width=1080, height=600)
+
+    def camera_callback(image):
+        array = np.frombuffer(image.raw_data, dtype=np.uint8)
+        array = array.reshape((image.height, image.width, 4))
+        rgb = array[:, :, :3][:, :, ::-1]  # BGRA → RGB
+
+        surface = pygame.surfarray.make_surface(rgb.swapaxes(0, 1))
+        screen.blit(surface, (0, 0))
+        pygame.display.flip()
+
+    camera.listen(camera_callback)
+
     print("Simulation running... Ctrl+C to quit")
 
     try:
         while True:
             world.tick()
             controller.tick(clock)
+
+            # keys = pygame.key.get_pressed()
+
+            # # 입력 확인 디버깅
+            # if keys[pygame.K_w]:
+            #     screen.fill((0, 100, 0))   # W 누르면 초록
+            # elif keys[pygame.K_s]:
+            #     screen.fill((100, 0, 0))   # S 누르면 빨강
+            # else:
+            #     screen.fill((0, 0, 100))
+
+            # pygame.display.flip()
+
             clock.tick(60)
     finally:
         print("Cleaning up actors...")
