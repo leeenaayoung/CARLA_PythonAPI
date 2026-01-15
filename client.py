@@ -4,7 +4,10 @@ import pygame
 import numpy as np
 
 from npc.generate_npc import spawn_npc_vehicles
+
 from control.keyboard_control import KeyboardController
+from control.wheel_control import WheelController
+from control.control_manager import ControlManager
 
 # client = carla.Client('localhost', 2000)
 # client.set_timeout(10.0) 
@@ -73,7 +76,16 @@ def setup_spectator(world, vehicle):
         )
     )
 
-# pygame 렌더링
+def follow_ego_spectator(world, ego, height=2.5, pitch=-20):
+    spectator = world.get_spectator()
+    transform = ego.get_transform()
+
+    spectator.set_transform(
+        carla.Transform(
+            transform.location + carla.Location(z=height),
+            carla.Rotation(pitch=pitch, yaw=transform.rotation.yaw)
+        )
+    )
 
 def main():
     pygame.init()
@@ -96,7 +108,21 @@ def main():
     # NPC vehicles
     npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30)
 
-    controller = KeyboardController(ego)
+    # controller
+    keyboard = KeyboardController(ego)
+
+    wheel = None
+    try:
+        wheel = WheelController(ego, config_path="wheel_config.ini")
+        print("Wheel controller enabled")
+    except Exception as e:
+        print("Wheel controller not available:", e)
+
+    controller = ControlManager(
+        vehicle=ego,
+        keyboard=keyboard,
+        wheel=wheel
+    )
 
     # setup camera
     camera = setup_camera(world, ego, width=1080, height=600)
@@ -119,17 +145,7 @@ def main():
             world.tick()
             controller.tick(clock)
 
-            # keys = pygame.key.get_pressed()
-
-            # # 입력 확인 디버깅
-            # if keys[pygame.K_w]:
-            #     screen.fill((0, 100, 0))   # W 누르면 초록
-            # elif keys[pygame.K_s]:
-            #     screen.fill((100, 0, 0))   # S 누르면 빨강
-            # else:
-            #     screen.fill((0, 0, 100))
-
-            # pygame.display.flip()
+            follow_ego_spectator(world, ego)
 
             clock.tick(60)
     finally:
