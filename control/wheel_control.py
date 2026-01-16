@@ -7,10 +7,6 @@ from configparser import ConfigParser
 class WheelController:
     def __init__(self, vehicle, config_path="wheel_config.ini"):
         parser = ConfigParser()
-        read_files = parser.read(config_path)
-
-        print("Config read files:", read_files)
-        print("Config sections:", parser.sections())
 
         self.vehicle = vehicle
         self.control = carla.VehicleControl()

@@ -31,24 +31,22 @@ class ControlManager:
         #     control = self.keyboard.get_control(clock)
 
         # self.vehicle.apply_control(control)
+
         kb_control = self.keyboard.get_control(clock)
 
         wheel_control = None
         if self.wheel:
             wheel_control = self.wheel.get_control(clock)
 
-        # --- control 병합 ---
+        # control 병합
         control = carla.VehicleControl()
 
-        # steering: wheel 우선
+        # control 방식 혼합 -> 리팩토링 예정
         if wheel_control:
             control.steer = wheel_control.steer
-            print("STEER: WHEEL")
         else:
             control.steer = kb_control.steer
-            print("STEER: KEYBOARD")
 
-        # throttle / brake: keyboard
         control.throttle = kb_control.throttle
         control.brake = kb_control.brake
         control.hand_brake = kb_control.hand_brake
