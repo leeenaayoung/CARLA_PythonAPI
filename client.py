@@ -9,8 +9,8 @@ from control.keyboard_control import KeyboardController
 from control.wheel_control import WheelController
 from control.control_manager import ControlManager
 
-# client = carla.Client('localhost', 2000)
-# client.set_timeout(10.0) 
+client = carla.Client('localhost', 2000)
+client.set_timeout(10.0) 
 # client.load_world('Town07') 
 # client.start_recorder('recording.log')
 
@@ -47,13 +47,17 @@ def setup_camera(world, vehicle, width=800, height=600):
     camera_bp = world.get_blueprint_library().find("sensor.camera.rgb")
     camera_bp.set_attribute("image_size_x", str(width))
     camera_bp.set_attribute("image_size_y", str(height))
-    camera_bp.set_attribute("fov", "90")
+    camera_bp.set_attribute("fov", "65")
 
     camera = world.spawn_actor(
-        camera_bp,
-        carla.Transform(carla.Location(x=1.5, z=2.4)),
-        attach_to=vehicle
-    )
+                                camera_bp,
+                                carla.Transform(
+                                        carla.Location(x=0.05, y=-0.23, z=1.18),
+                                        carla.Rotation(pitch=-9.0, yaw=0.0, roll=0.0)
+                                        ),
+                                        attach_to=vehicle
+                                    )
+
     return camera
 
 # 차량 스폰
@@ -76,6 +80,7 @@ def setup_spectator(world, vehicle):
         )
     )
 
+# spectator follow
 def follow_ego_spectator(world, ego, height=2.5, pitch=-20):
     spectator = world.get_spectator()
     transform = ego.get_transform()
