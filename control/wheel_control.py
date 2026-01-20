@@ -44,10 +44,6 @@ class WheelController:
         pygame.event.pump()
 
         steer_raw = self.joystick.get_axis(self.steer_idx)
-
-        # # --- steering mapping ---
-        # steer_cmd = math.tan(1.1 * steer_raw)
-        # steer_cmd = max(-1.0, min(1.0, steer_cmd))
         
         # test
         STEER_GAIN = 8.0
