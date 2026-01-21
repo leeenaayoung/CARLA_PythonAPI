@@ -51,7 +51,6 @@ class KeyboardController:
 
         elif event.key == K_p:
             self.autopilot_enabled = not self.autopilot_enabled
-            # self.vehicle.set_autopilot(self.autopilot_enabled)
 
         elif event.key == K_m:
             self.control.manual_gear_shift = not self.control.manual_gear_shift
@@ -107,9 +106,7 @@ class KeyboardController:
         # Hand brake
         self.control.hand_brake = keys[K_SPACE]
 
-    # def _apply_control(self):
-    #     if not self.autopilot_enabled:
-    #         self.vehicle.apply_control(self.control)
+
 
 
 
