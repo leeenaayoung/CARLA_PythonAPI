@@ -7,11 +7,14 @@ from npc.generate_npc import spawn_npc_vehicles
 
 from control.agent_controller import AgentController
 from control.wheel_control import WheelController
-from agents.navigation.behavior_agent import BehaviorAgent
+from control.KeyboardModeToggle import KeyboardModeToggle
+
+# from agents.navigation.behavior_agent import BehaviorAgent
+from agents.navigation.basic_agent import BasicAgent
 
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0) 
-client.load_world('Town01') 
+client.load_world('Town02') 
 # client.start_recorder('recording.log')
 
 # 환경 세팅
@@ -104,10 +107,11 @@ def main():
 
     world = setup_world(client)  # 환경 세팅
 
-    tm = setup_traffic_manager(client, sync=True, seed=42)
+    mode_toggle  = KeyboardModeToggle()
 
     # ego vehicle
     ego = spawn_vehicle(world)
+    ego.set_autopilot(False)
     setup_spectator(world, ego)
 
     ego.apply_control(carla.VehicleControl(brake=1.0))
@@ -115,12 +119,13 @@ def main():
         world.tick()
 
     # NPC vehicles
+    tm = setup_traffic_manager(client, sync=True)
     npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30)
 
     # agent
-    agent = BehaviorAgent(ego, behavior="cautious")
+    agent = BasicAgent(ego)
     spawn_points = world.get_map().get_spawn_points()
-    
+
     ego_wp = world.get_map().get_waypoint(
         ego.get_location(),
         project_to_road=True,
@@ -141,6 +146,11 @@ def main():
 
     agent.set_destination(target_location)
     print("[DEBUG] Agent destination set to:", target_location)
+
+    print("[DEBUG] warming up BehaviorAgent planner...")
+    for _ in range(10):
+        world.tick()
+    print("[DEBUG] planner warm-up done")
 
     # wheel
     wheel = None
@@ -173,14 +183,11 @@ def main():
         while True:
             clock.tick(60)
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    raise KeyboardInterrupt
-
             world.tick()  # synchronous mode
 
-            # if agent.done():
-            #     print("[DEBUG] Agent reached destination:", target_location)
+            mode_toggle.parse_events()
+
+            # Debug info
             if int(world.get_snapshot().timestamp.elapsed_seconds) % 1 == 0:
                 ego_loc = ego.get_location()
                 ego_wp = world.get_map().get_waypoint(
@@ -189,13 +196,14 @@ def main():
                     lane_type=carla.LaneType.Driving
                 )
 
-                print(
-                    "[DEBUG]",
-                    "road:", ego_wp.road_id,
-                    "lane:", ego_wp.lane_id,
-                    "yaw:", round(ego.get_transform().rotation.yaw, 2)
-                )
-            control = agent_controller.step()
+                # print(
+                #     "[DEBUG]",
+                #     "road:", ego_wp.road_id,
+                #     "lane:", ego_wp.lane_id,
+                #     "yaw:", round(ego.get_transform().rotation.yaw, 2)
+                # )
+
+            control = agent_controller.step(mode_toggle)
             ego.apply_control(control)
 
             follow_ego_spectator(world, ego)
@@ -206,8 +214,8 @@ def main():
     finally:
         print("Cleaning up actors...")
         ego.destroy()
-        for v in npc_vehicles:
-            v.destroy()
+        # for v in npc_vehicles:
+        #     v.destroy()
         camera.stop()
         camera.destroy()
         pygame.quit()
