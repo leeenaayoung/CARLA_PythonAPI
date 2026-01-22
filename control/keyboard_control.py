@@ -18,11 +18,6 @@ class KeyboardController:
 
         self.steer_cache = 0.0
 
-    # def tick(self, clock):
-    #     self._handle_events()
-    #     self._update_control(clock)
-        # self._apply_control()
-
     def get_control(self, clock):
         self._handle_events()
         self._update_control(clock)
