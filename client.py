@@ -9,12 +9,11 @@ from control.agent_controller import AgentController
 from control.wheel_control import WheelController
 from control.KeyboardModeToggle import KeyboardModeToggle
 
-# from agents.navigation.behavior_agent import BehaviorAgent
 from agents.navigation.basic_agent import BasicAgent
 
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0) 
-client.load_world('Town02') 
+client.load_world('Town04') 
 # client.start_recorder('recording.log')
 
 # 환경 세팅
@@ -111,7 +110,6 @@ def main():
 
     # ego vehicle
     ego = spawn_vehicle(world)
-    ego.set_autopilot(False)
     setup_spectator(world, ego)
 
     ego.apply_control(carla.VehicleControl(brake=1.0))
@@ -196,13 +194,6 @@ def main():
                     lane_type=carla.LaneType.Driving
                 )
 
-                # print(
-                #     "[DEBUG]",
-                #     "road:", ego_wp.road_id,
-                #     "lane:", ego_wp.lane_id,
-                #     "yaw:", round(ego.get_transform().rotation.yaw, 2)
-                # )
-
             control = agent_controller.step(mode_toggle)
             ego.apply_control(control)
 
@@ -214,8 +205,6 @@ def main():
     finally:
         print("Cleaning up actors...")
         ego.destroy()
-        # for v in npc_vehicles:
-        #     v.destroy()
         camera.stop()
         camera.destroy()
         pygame.quit()
