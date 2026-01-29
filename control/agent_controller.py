@@ -1,104 +1,132 @@
 import carla
-from enum import Enum
 import time
+from enum import Enum
+
 
 class DriveMode(Enum):
     AUTO = 0
     MANUAL = 1
 
+
 class AgentController:
-    def __init__(self, agent, wheel,auto_resume_delay=2.0):
+    """
+    AUTO   : BehaviorAgent full control
+    MANUAL : BehaviorAgent runs in background, steer overridden by human
+    """
+
+    def __init__(self, agent, wheel):
         self.agent = agent
+        self.vehicle = agent._vehicle
         self.wheel = wheel
 
         self.mode = DriveMode.AUTO
-        self.last_human_input_time = None
-        self.auto_resume_delay = auto_resume_delay
 
-        self.manual_by_toggle = False
-        self.destination = None
+        # planner reset control
+        self._planner_reset_done = True
+
+        # steer smoothing
         self._last_steer = 0.0
-        self.max_steer_rate = 0.05
+        self.MAX_STEER_RATE = 0.1
 
-        self.auto_enter_time = None
-        self._transition_stop = False
+    # --------------------------------------------------------------
+    # utility
+    # --------------------------------------------------------------
+    def _reset_agent_planner(self):
+        lp = self.agent._local_planner
 
-    def _limit_steer_rate(self, steer):
-        delta = steer - self._last_steer
-        if abs(delta) > self.max_steer_rate:
-            steer = self._last_steer + self.max_steer_rate * (1 if delta > 0 else -1)
-        self._last_steer = steer
-        return steer
+        if hasattr(lp, "_waypoints_queue"):
+            lp._waypoints_queue.clear()
 
+        lp.target_waypoint = None
+        lp.target_road_option = None
+
+        ego_loc = self.vehicle.get_location()
+        current_wp = self.agent._map.get_waypoint(
+            ego_loc,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+
+        if hasattr(self.agent, "_destination") and self.agent._destination:
+            target_loc = self.agent._destination
+        else:
+            next_wps = current_wp.next(20.0)
+            if not next_wps:
+                return
+            target_loc = next_wps[0].transform.location
+
+        self.agent.set_destination(
+            target_loc,
+            start_location=current_wp.transform.location,
+            clean_queue=True
+        )
+
+    # --------------------------------------------------------------
+    # main step
+    # --------------------------------------------------------------
     def step(self, interrupt=None):
-        now = time.time()
 
-        # Check for human intervention
+        # ----------------------------------------------------------
+        # mode toggle (P key)
+        # ----------------------------------------------------------
         if interrupt and interrupt.toggle_mode_requested:
+            interrupt.toggle_mode_requested = False
+
             if self.mode == DriveMode.AUTO:
                 self.mode = DriveMode.MANUAL
-                self.manual_by_toggle = True
-                self._transition_stop = True
-                print("[DEBUG][MODE] toggled -> DriveMode.MANUAL")
+                print("[MODE] AUTO -> MANUAL")
+
             else:
                 self.mode = DriveMode.AUTO
-                # self.auto_ready = False
-                self.manual_by_toggle = False
-                self._last_steer = 0.0
-                if self.auto_enter_time is None:         
-                    self.auto_enter_time = time.time()
+                self._planner_reset_done = False
+                print("[MODE] MANUAL -> AUTO")
 
-                try:
-                    ego = self.agent._vehicle
-                    dest = self.agent._destination
+        # ----------------------------------------------------------
+        # ALWAYS run agent
+        # ----------------------------------------------------------
+        world = self.vehicle.get_world()
+        # control = self.agent.run_step()
 
-                    self.agent.set_destination(dest)
-                    print("[DEBUG][MODE] -> AUTO (replan from current pose)")
-                except Exception as e:
-                    print("[WARN][AUTO] replan failed:", e)
-    
-                print("[DEBUG][MODE] toggled -> DriveMode.AUTO")
-
-            self.last_human_input_time = now
-            interrupt.toggle_mode_requested = False
-        
-        if self.mode == DriveMode.MANUAL:
-            if self.wheel:
-                if self._transition_stop:
-                    self._transition_stop = False
-                    return carla.VehicleControl(throttle=0.0, brake=1.0, steer=0.0)
-                return self.wheel.get_human_control()
-            else:
-                return carla.VehicleControl()
-        
         try:
             control = self.agent.run_step()
-
-            AUTO_STABILIZE_TIME = 0.5
-
-            # elapsed = time.time() - self.auto_enter_time
-            if self.auto_enter_time is None:
-                elapsed = float("inf")
-            else:
-                elapsed = time.time() - self.auto_enter_time
-
-
-            if elapsed < AUTO_STABILIZE_TIME:
-                # 속도는 억제
-                control.throttle = 0.0
-                control.brake = 1.0
-
-                # 조향만 천천히 정렬
-                control.steer = self._limit_steer_rate(control.steer)
-            else:
-                control.brake = 0.0
-                self.auto_enter_time = None
-
-            return control
-
-            # control.steer = self._limit_steer_rate(control.steer)
         except AttributeError as e:
-            print("[ERROR][AUTO]", e)
-            return carla.VehicleControl(brake=1.0)
+            # BehaviorAgent 내부 waypoint 붕괴 보호
+            print("[WARN] BehaviorAgent state invalid, fallback to LocalPlanner")
+
+            control = self.agent._local_planner.run_step()
+
+        print(f"[DEBUG] agent steer = {control.steer:.3f}, throttle = {control.throttle:.3f}")
+    
+        # ----------------------------------------------------------
+        # planner reset (MANUAL -> AUTO, only once)
+        # ----------------------------------------------------------
+        if self.mode == DriveMode.AUTO and not self._planner_reset_done:
+            self._reset_agent_planner()
+            self._planner_reset_done = True
+
+        # ----------------------------------------------------------
+        # low-speed assist (bias, not override)
+        # ----------------------------------------------------------
+        vel = self.vehicle.get_velocity()
+        speed = (vel.x**2 + vel.y**2 + vel.z**2) ** 0.5
+
+        if speed < 1.0:
+            control.throttle = max(control.throttle, 0.35)
+            control.brake = 0.0
+
+        # ----------------------------------------------------------
+        # steer rate limit (always)
+        # ----------------------------------------------------------
+        # delta = control.steer - self._last_steer
+        # if abs(delta) > self.MAX_STEER_RATE:
+        #     control.steer = self._last_steer + self.MAX_STEER_RATE * (1 if delta > 0 else -1)
+        # self._last_steer = control.steer
+
+        # ----------------------------------------------------------
+        # MANUAL steer override
+        # ----------------------------------------------------------
+        if self.mode == DriveMode.MANUAL and self.wheel:
+            human = self.wheel.get_human_control()
+            control.steer = human.steer
 
         return control

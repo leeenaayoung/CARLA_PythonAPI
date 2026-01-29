@@ -51,8 +51,6 @@ class WheelController:
         brake_raw = self.joystick.get_axis(self.brake_idx)
 
         # pedal normalize
-        # throttle = (1.0 - throttle_raw) / 2.0
-        # brake = (1.0 - brake_raw) / 2.0
         throttle = self.pedal_normalize(throttle_raw, deadzone=0.02)
         brake = self.pedal_normalize(brake_raw, deadzone=0.08)
 
