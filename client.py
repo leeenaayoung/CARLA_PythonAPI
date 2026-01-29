@@ -9,27 +9,28 @@ from control.agent_controller import AgentController
 from control.wheel_control import WheelController
 from control.KeyboardModeToggle import KeyboardModeToggle
 
-from agents.navigation.basic_agent import BasicAgent
+# from agents.navigation.basic_agent import BasicAgent
+from agents.navigation.behavior_agent import BehaviorAgent
 
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0) 
 client.load_world('Town04') 
 # client.start_recorder('recording.log')
 
-# 환경 세팅
+#  env setup
 def setup_world(client):
     world = client.get_world()
     map = world.get_map()
 
     settings = world.get_settings()
-    settings.synchronous_mode = True    # 동기 모드 활성화
+    settings.synchronous_mode = True    # synchronous mode
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)
 
     print("Connected to:", world.get_map().name)
     return world
 
-# TM 설정
+# TM setup for npc
 def setup_traffic_manager(client, sync=True, seed=None):
     tm = client.get_trafficmanager(8000)
 
@@ -44,7 +45,7 @@ def setup_traffic_manager(client, sync=True, seed=None):
 
     return tm
 
-# 카메라 세팅
+# camera setup
 def setup_camera(world, vehicle, width=800, height=600):
     camera_bp = world.get_blueprint_library().find("sensor.camera.rgb")
     camera_bp.set_attribute("image_size_x", str(width))
@@ -62,7 +63,7 @@ def setup_camera(world, vehicle, width=800, height=600):
 
     return camera
 
-# 차량 스폰
+# ego vehicle spawn
 def spawn_vehicle(world):
     blueprints = world.get_blueprint_library()
     # vehicle_bp = blueprints.filter('vehicle')[0]
@@ -101,10 +102,10 @@ def main():
     pygame.display.flip()
     clock = pygame.time.Clock()
 
-    client = carla.Client('localhost', 2000)    # CARLA 서버 연결
-    client.set_timeout(10.0)
+    client = carla.Client('localhost', 2000)    # CARLA server connect
+    client.set_timeout(20.0)
 
-    world = setup_world(client)  # 환경 세팅
+    world = setup_world(client)  
 
     mode_toggle  = KeyboardModeToggle()
 
@@ -121,7 +122,10 @@ def main():
     npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30)
 
     # agent
-    agent = BasicAgent(ego)
+    # agent = BasicAgent(ego)
+    agent = BehaviorAgent(ego, behavior='aggressive')
+    # agent._min_speed = 10.0
+
     spawn_points = world.get_map().get_spawn_points()
 
     ego_wp = world.get_map().get_waypoint(
@@ -141,16 +145,15 @@ def main():
         if target_wp and target_wp.road_id == ego_wp.road_id:
             target_location = target_wp.transform.location
             break
-
+    
+    agent.ignore_traffic_lights(True)
+    agent.ignore_vehicles(True)
     agent.set_destination(target_location)
-    print("[DEBUG] Agent destination set to:", target_location)
 
-    print("[DEBUG] warming up BehaviorAgent planner...")
     for _ in range(10):
         world.tick()
-    print("[DEBUG] planner warm-up done")
 
-    # wheel
+    # steering_wheel
     wheel = None
     try:
         wheel = WheelController(config_path="wheel_config.ini")
