@@ -9,12 +9,10 @@ from control.agent_controller import AgentController
 from control.wheel_control import WheelController
 from control.KeyboardModeToggle import KeyboardModeToggle
 
-# from agents.navigation.basic_agent import BasicAgent
 from agents.navigation.behavior_agent import BehaviorAgent
 
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0) 
-# client.load_world('Town04') 
 # client.start_recorder('recording.log')
 
 #  env setup
@@ -126,8 +124,7 @@ def main():
         world.tick()
 
     # agent
-    # agent = BasicAgent(ego)
-    agent = BehaviorAgent(ego, behavior='cautious')
+    agent = BehaviorAgent(ego, behavior='custom')
 
     # NPC vehicles
     tm = setup_traffic_manager(client, sync=True)
@@ -151,7 +148,7 @@ def main():
         )
 
         # if target_wp and target_wp.road_id == ego_wp.road_id:
-        if target_wp and target_wp.transform.location.distance(ego.get_location()) > 1000.0:
+        if target_wp and target_wp.transform.location.distance(ego.get_location()) > 200.0:
             target_location = target_wp.transform.location
             break
     
@@ -183,6 +180,9 @@ def main():
         surface = pygame.surfarray.make_surface(rgb.swapaxes(0, 1))
         screen.blit(surface, (0, 0))
         pygame.display.flip()
+    
+    for _ in range(5):
+        world.tick()
 
     camera.listen(camera_callback)
 
@@ -190,23 +190,24 @@ def main():
 
     try:
         while True:
+            # world.wait_for_tick() # async mode
+            world.tick()  # synchronous mode
             clock.tick(60)
+            pygame.event.pump()
 
             mode_toggle.parse_events()
 
             # Debug info
-            if int(world.get_snapshot().timestamp.elapsed_seconds) % 1 == 0:
-                ego_loc = ego.get_location()
-                ego_wp = world.get_map().get_waypoint(
-                    ego_loc,
-                    project_to_road=True,
-                    lane_type=carla.LaneType.Driving
-                )
+            # if int(world.get_snapshot().timestamp.elapsed_seconds) % 1 == 0:
+            #     ego_loc = ego.get_location()
+            #     ego_wp = world.get_map().get_waypoint(
+            #         ego_loc,
+            #         project_to_road=True,
+            #         lane_type=carla.LaneType.Driving
+            #     )
 
             control = agent_controller.step(mode_toggle)
             ego.apply_control(control)
-
-            world.tick()  # synchronous mode
 
             follow_ego_spectator(world, ego)
 
