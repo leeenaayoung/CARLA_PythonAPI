@@ -5,29 +5,40 @@ import numpy as np
 
 from npc.generate_npc import spawn_npc_vehicles
 
-from control.keyboard_control import KeyboardController
+from control.agent_controller import AgentController
 from control.wheel_control import WheelController
-from control.control_manager import ControlManager
+from control.KeyboardModeToggle import KeyboardModeToggle
 
-# client = carla.Client('localhost', 2000)
-# client.set_timeout(10.0) 
-# client.load_world('Town07') 
+# from agents.navigation.basic_agent import BasicAgent
+from agents.navigation.behavior_agent import BehaviorAgent
+
+client = carla.Client('localhost', 2000)
+client.set_timeout(10.0) 
+# client.load_world('Town04') 
 # client.start_recorder('recording.log')
 
-# 환경 세팅
-def setup_world(client):
+#  env setup
+def setup_world(client, town="Town05"):
+    client.load_world(town)
     world = client.get_world()
     map = world.get_map()
 
     settings = world.get_settings()
-    settings.synchronous_mode = True    # 동기 모드 활성화
+    settings.synchronous_mode = True    # synchronous mode
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)
+
+    actors = world.get_actors()
+    for actor in actors:
+        if actor.type_id.startswith("vehicle") or actor.type_id.startswith("walker"):
+            actor.destroy()
+
+    world.tick()
 
     print("Connected to:", world.get_map().name)
     return world
 
-# TM 설정
+# TM setup for npc
 def setup_traffic_manager(client, sync=True, seed=None):
     tm = client.get_trafficmanager(8000)
 
@@ -37,32 +48,36 @@ def setup_traffic_manager(client, sync=True, seed=None):
     if seed is not None:
         tm.set_random_device_seed(seed)
 
-    tm.set_global_distance_to_leading_vehicle(2.5)
+    tm.set_global_distance_to_leading_vehicle(4.0)
     tm.global_percentage_speed_difference(0.0)
 
     return tm
 
-# 카메라 세팅
+# camera setup
 def setup_camera(world, vehicle, width=800, height=600):
     camera_bp = world.get_blueprint_library().find("sensor.camera.rgb")
     camera_bp.set_attribute("image_size_x", str(width))
     camera_bp.set_attribute("image_size_y", str(height))
-    camera_bp.set_attribute("fov", "90")
+    camera_bp.set_attribute("fov", "65")
 
     camera = world.spawn_actor(
-        camera_bp,
-        carla.Transform(carla.Location(x=1.5, z=2.4)),
-        attach_to=vehicle
-    )
+                                camera_bp,
+                                carla.Transform(
+                                        carla.Location(x=0.05, y=-0.23, z=1.18),
+                                        carla.Rotation(pitch=-9.0, yaw=0.0, roll=0.0)
+                                        ),
+                                        attach_to=vehicle
+                                    )
+
     return camera
 
-# 차량 스폰
+# ego vehicle spawn
 def spawn_vehicle(world):
     blueprints = world.get_blueprint_library()
     # vehicle_bp = blueprints.filter('vehicle')[0]
     vehicle_bp = blueprints.filter('vehicle.tesla.model3')[0]
-    spawn_point = random.choice(world.get_map().get_spawn_points())
-    vehicle = world.spawn_actor(vehicle_bp, spawn_point)
+    spawn_points = world.get_map().get_spawn_points()
+    vehicle = world.spawn_actor(vehicle_bp, spawn_points[0])
     return vehicle
 
 #spectator setup
@@ -76,6 +91,7 @@ def setup_spectator(world, vehicle):
         )
     )
 
+# spectator follow
 def follow_ego_spectator(world, ego, height=2.5, pitch=-20):
     spectator = world.get_spectator()
     transform = ego.get_transform()
@@ -94,35 +110,67 @@ def main():
     pygame.display.flip()
     clock = pygame.time.Clock()
 
-    client = carla.Client('localhost', 2000)    # CARLA 서버 연결
-    client.set_timeout(10.0)
+    client = carla.Client('localhost', 2000)    # CARLA server connect
+    client.set_timeout(20.0)
 
-    world = setup_world(client)  # 환경 세팅
+    world = setup_world(client)  
 
-    tm = setup_traffic_manager(client, sync=True, seed=42)
+    mode_toggle  = KeyboardModeToggle()
 
     # ego vehicle
     ego = spawn_vehicle(world)
     setup_spectator(world, ego)
 
+    ego.apply_control(carla.VehicleControl(brake=1.0))
+    for _ in range(10):
+        world.tick()
+
+    # agent
+    # agent = BasicAgent(ego)
+    agent = BehaviorAgent(ego, behavior='cautious')
+
     # NPC vehicles
-    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30)
+    tm = setup_traffic_manager(client, sync=True)
+    tm.set_random_device_seed(0)
+    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=15) 
 
-    # controller
-    keyboard = KeyboardController(ego)
+    spawn_points = world.get_map().get_spawn_points()
 
+    ego_wp = world.get_map().get_waypoint(
+        ego.get_location(),
+        project_to_road=True,
+        lane_type=carla.LaneType.Driving
+    )
+
+    while True:
+        sp = random.choice(spawn_points)
+        target_wp = world.get_map().get_waypoint(
+            sp.location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+
+        # if target_wp and target_wp.road_id == ego_wp.road_id:
+        if target_wp and target_wp.transform.location.distance(ego.get_location()) > 1000.0:
+            target_location = target_wp.transform.location
+            break
+    
+    agent.set_destination(target_location)
+
+    for _ in range(10):
+        world.tick()
+
+    # steering_wheel
     wheel = None
     try:
-        wheel = WheelController(ego, config_path="wheel_config.ini")
+        wheel = WheelController(config_path="wheel_config.ini")
         print("Wheel controller enabled")
     except Exception as e:
         print("Wheel controller not available:", e)
 
-    controller = ControlManager(
-        vehicle=ego,
-        keyboard=keyboard,
-        wheel=wheel
-    )
+    # agent controller
+    agent_controller = AgentController(agent, wheel)
+    agent_controller._global_destination = target_location
 
     # setup camera
     camera = setup_camera(world, ego, width=1080, height=600)
@@ -142,19 +190,42 @@ def main():
 
     try:
         while True:
-            world.tick()
-            controller.tick(clock)
+            clock.tick(60)
+
+            mode_toggle.parse_events()
+
+            # Debug info
+            if int(world.get_snapshot().timestamp.elapsed_seconds) % 1 == 0:
+                ego_loc = ego.get_location()
+                ego_wp = world.get_map().get_waypoint(
+                    ego_loc,
+                    project_to_road=True,
+                    lane_type=carla.LaneType.Driving
+                )
+
+            control = agent_controller.step(mode_toggle)
+            ego.apply_control(control)
+
+            world.tick()  # synchronous mode
 
             follow_ego_spectator(world, ego)
 
-            clock.tick(60)
+    except KeyboardInterrupt:
+        print("Interrupted by user")
+
     finally:
         print("Cleaning up actors...")
-        ego.destroy()
-        for v in npc_vehicles:
-            v.destroy()
-        pygame.quit()
 
+        # debuging log
+        # print("Junction seen:", agent_controller._junction_seen)
+        # print("Slowdown seen:", agent_controller._slowdown_seen)
+        # print("Traffic light affected:", agent_controller._traffic_light_affected)
+        # print("hard_brake_seen:", agent_controller._hard_brake_seen)
+
+        ego.destroy()
+        camera.stop()
+        camera.destroy()
+        pygame.quit()
 
 if __name__ == "__main__":
     main()

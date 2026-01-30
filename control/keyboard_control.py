@@ -18,11 +18,6 @@ class KeyboardController:
 
         self.steer_cache = 0.0
 
-    # def tick(self, clock):
-    #     self._handle_events()
-    #     self._update_control(clock)
-        # self._apply_control()
-
     def get_control(self, clock):
         self._handle_events()
         self._update_control(clock)
@@ -51,7 +46,6 @@ class KeyboardController:
 
         elif event.key == K_p:
             self.autopilot_enabled = not self.autopilot_enabled
-            # self.vehicle.set_autopilot(self.autopilot_enabled)
 
         elif event.key == K_m:
             self.control.manual_gear_shift = not self.control.manual_gear_shift
@@ -107,9 +101,7 @@ class KeyboardController:
         # Hand brake
         self.control.hand_brake = keys[K_SPACE]
 
-    # def _apply_control(self):
-    #     if not self.autopilot_enabled:
-    #         self.vehicle.apply_control(self.control)
+
 
 
 
