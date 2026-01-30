@@ -5,12 +5,10 @@ from configparser import ConfigParser
 
 
 class WheelController:
-    def __init__(self, vehicle, config_path="wheel_config.ini"):
+    def __init__(self, config_path="wheel_config.ini"):
         parser = ConfigParser()
 
-        self.vehicle = vehicle
         self.control = carla.VehicleControl()
-        self.autopilot_requested = False
 
         # --- joystick init ---
         pygame.joystick.init()
@@ -23,8 +21,8 @@ class WheelController:
         # --- load config ---
         parser = ConfigParser()
         parser.read(config_path)
-
         section = parser.sections()[0]  # 첫 섹션 사용
+
         self.steer_idx = parser.getint(section, "steering_wheel")
         self.throttle_idx = parser.getint(section, "throttle")
         self.brake_idx = parser.getint(section, "brake")
@@ -34,38 +32,58 @@ class WheelController:
         # 상태 저장
         self._last_steer = 0.0
 
-    def has_input(self, steer_threshold=0.0001):
+    def pedal_normalize(self, raw, deadzone=0.05):
+        val = (1.0 - raw) / 2.0
+
+        # deadzone
+        if val < deadzone:
+            val = 0.0
+
+        # re-normalize (optional but recommended)
+        return min(1.0, max(0.0, val))
+
+    def detect_intervention(self,
+                            steer_th=0.0001,
+                            pedal_th=0.02):
         pygame.event.pump()
         steer = self.joystick.get_axis(self.steer_idx)
-        print("wheel steer raw:", steer)
-        return abs(steer) > steer_threshold
+        throttle_raw = self.joystick.get_axis(self.throttle_idx)
+        brake_raw = self.joystick.get_axis(self.brake_idx)
 
-    def get_control(self, clock):
+        # pedal normalize
+        throttle = self.pedal_normalize(throttle_raw, deadzone=0.02)
+        brake = self.pedal_normalize(brake_raw, deadzone=0.08)
+
+
+        return (
+            abs(steer) > steer_th or
+            abs(throttle) > pedal_th or
+            abs(brake) > pedal_th
+        )
+
+    def get_human_control(self, clock=None):
         pygame.event.pump()
 
         steer_raw = self.joystick.get_axis(self.steer_idx)
+        throttle_raw = self.joystick.get_axis(self.throttle_idx)
+        brake_raw = self.joystick.get_axis(self.brake_idx)
 
-        # # --- steering mapping ---
-        # steer_cmd = math.tan(1.1 * steer_raw)
-        # steer_cmd = max(-1.0, min(1.0, steer_cmd))
-        
-        # test
+        # debug
+        # print(f"[DEBUG] throttle_raw={throttle_raw:.3f}, brake_raw={brake_raw:.3f}")
+
+        # steering
         STEER_GAIN = 8.0
         steer_cmd = STEER_GAIN * math.tan(1.1 * steer_raw)
         steer_cmd = max(-1.0, min(1.0, steer_cmd))
-        self.control.steer = steer_cmd
 
-        self.control.steer = steer_cmd
-        self._last_steer = steer_cmd
+        # pedals
+        throttle = self.pedal_normalize(throttle_raw, deadzone=0.02)
+        brake = self.pedal_normalize(brake_raw, deadzone=0.08)
 
-        # --- throttle / brake (페달 연결 전: 0 고정) ---
-        self.control.throttle = 0.0
-        self.control.brake = 0.0
 
-        # --- autopilot ---
-        for event in pygame.event.get():
-            if event.type == pygame.JOYBUTTONDOWN:
-                if self.autopilot_button is not None and event.button == self.autopilot_button:
-                    self.autopilot_requested = not self.autopilot_requested
+        control = carla.VehicleControl()
+        control.steer = steer_cmd
+        control.throttle = throttle
+        control.brake = brake
 
-        return self.control
+        return control
