@@ -14,11 +14,12 @@ from agents.navigation.behavior_agent import BehaviorAgent
 
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0) 
-client.load_world('Town04') 
+# client.load_world('Town04') 
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client):
+def setup_world(client, town="Town05"):
+    client.load_world(town)
     world = client.get_world()
     map = world.get_map()
 
@@ -26,6 +27,13 @@ def setup_world(client):
     settings.synchronous_mode = True    # synchronous mode
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)
+
+    actors = world.get_actors()
+    for actor in actors:
+        if actor.type_id.startswith("vehicle") or actor.type_id.startswith("walker"):
+            actor.destroy()
+
+    world.tick()
 
     print("Connected to:", world.get_map().name)
     return world
@@ -40,7 +48,7 @@ def setup_traffic_manager(client, sync=True, seed=None):
     if seed is not None:
         tm.set_random_device_seed(seed)
 
-    tm.set_global_distance_to_leading_vehicle(2.5)
+    tm.set_global_distance_to_leading_vehicle(4.0)
     tm.global_percentage_speed_difference(0.0)
 
     return tm
@@ -117,14 +125,14 @@ def main():
     for _ in range(10):
         world.tick()
 
-    # NPC vehicles
-    tm = setup_traffic_manager(client, sync=True)
-    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30)
-
     # agent
     # agent = BasicAgent(ego)
-    agent = BehaviorAgent(ego, behavior='aggressive')
-    # agent._min_speed = 10.0
+    agent = BehaviorAgent(ego, behavior='cautious')
+
+    # NPC vehicles
+    tm = setup_traffic_manager(client, sync=True)
+    tm.set_random_device_seed(0)
+    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=15) 
 
     spawn_points = world.get_map().get_spawn_points()
 
@@ -142,12 +150,11 @@ def main():
             lane_type=carla.LaneType.Driving
         )
 
-        if target_wp and target_wp.road_id == ego_wp.road_id:
+        # if target_wp and target_wp.road_id == ego_wp.road_id:
+        if target_wp and target_wp.transform.location.distance(ego.get_location()) > 1000.0:
             target_location = target_wp.transform.location
             break
     
-    agent.ignore_traffic_lights(True)
-    agent.ignore_vehicles(True)
     agent.set_destination(target_location)
 
     for _ in range(10):
@@ -163,6 +170,7 @@ def main():
 
     # agent controller
     agent_controller = AgentController(agent, wheel)
+    agent_controller._global_destination = target_location
 
     # setup camera
     camera = setup_camera(world, ego, width=1080, height=600)
@@ -184,8 +192,6 @@ def main():
         while True:
             clock.tick(60)
 
-            world.tick()  # synchronous mode
-
             mode_toggle.parse_events()
 
             # Debug info
@@ -200,6 +206,8 @@ def main():
             control = agent_controller.step(mode_toggle)
             ego.apply_control(control)
 
+            world.tick()  # synchronous mode
+
             follow_ego_spectator(world, ego)
 
     except KeyboardInterrupt:
@@ -207,6 +215,13 @@ def main():
 
     finally:
         print("Cleaning up actors...")
+
+        # debuging log
+        # print("Junction seen:", agent_controller._junction_seen)
+        # print("Slowdown seen:", agent_controller._slowdown_seen)
+        # print("Traffic light affected:", agent_controller._traffic_light_affected)
+        # print("hard_brake_seen:", agent_controller._hard_brake_seen)
+
         ego.destroy()
         camera.stop()
         camera.destroy()

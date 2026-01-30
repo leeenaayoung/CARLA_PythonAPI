@@ -1,6 +1,7 @@
 import carla
 import time
 from enum import Enum
+from agents.navigation.controller import VehiclePIDController
 
 
 class DriveMode(Enum):
@@ -9,11 +10,6 @@ class DriveMode(Enum):
 
 
 class AgentController:
-    """
-    AUTO   : BehaviorAgent full control
-    MANUAL : BehaviorAgent runs in background, steer overridden by human
-    """
-
     def __init__(self, agent, wheel):
         self.agent = agent
         self.vehicle = agent._vehicle
@@ -28,6 +24,21 @@ class AgentController:
         self._last_steer = 0.0
         self.MAX_STEER_RATE = 0.1
 
+        # handover smoothing
+        self._handover_alpha = None  
+        self.HANDOVER_STEPS = 10
+        self._post_reset_hold = 0
+        self._force_planner_reset = False
+
+        # global destination
+        self._global_destination = None
+
+        # simulator state debug
+        self._junction_seen = False
+        self._slowdown_seen = False
+        self._traffic_light_affected = False
+        self._hard_brake_seen = False
+
     # --------------------------------------------------------------
     # utility
     # --------------------------------------------------------------
@@ -41,23 +52,20 @@ class AgentController:
         lp.target_road_option = None
 
         ego_loc = self.vehicle.get_location()
-        current_wp = self.agent._map.get_waypoint(
-            ego_loc,
-            project_to_road=True,
-            lane_type=carla.LaneType.Driving
+
+        lp._vehicle_controller = VehiclePIDController(
+            lp._vehicle,
+            args_lateral=lp._args_lateral_dict,
+            args_longitudinal=lp._args_longitudinal_dict,
+            offset=lp._offset,
+            max_throttle=lp._max_throt,
+            max_brake=lp._max_brake,
+            max_steering=lp._max_steer
         )
 
-        if hasattr(self.agent, "_destination") and self.agent._destination:
-            target_loc = self.agent._destination
-        else:
-            next_wps = current_wp.next(20.0)
-            if not next_wps:
-                return
-            target_loc = next_wps[0].transform.location
-
         self.agent.set_destination(
-            target_loc,
-            start_location=current_wp.transform.location,
+            self._global_destination,
+            start_location=ego_loc,
             clean_queue=True
         )
 
@@ -78,55 +86,78 @@ class AgentController:
 
             else:
                 self.mode = DriveMode.AUTO
-                self._planner_reset_done = False
+                
+                self._force_planner_reset = True
+                self._post_reset_hold = 20
+
+                self._handover_alpha = 0.0
+                self._handover_step = 1.0 / self.HANDOVER_STEPS
                 print("[MODE] MANUAL -> AUTO")
 
         # ----------------------------------------------------------
-        # ALWAYS run agent
+        # planner reset (ONLY ONCE, before run_step)
         # ----------------------------------------------------------
-        world = self.vehicle.get_world()
-        # control = self.agent.run_step()
-
-        try:
-            control = self.agent.run_step()
-        except AttributeError as e:
-            # BehaviorAgent 내부 waypoint 붕괴 보호
-            print("[WARN] BehaviorAgent state invalid, fallback to LocalPlanner")
-
-            control = self.agent._local_planner.run_step()
-
-        print(f"[DEBUG] agent steer = {control.steer:.3f}, throttle = {control.throttle:.3f}")
-    
-        # ----------------------------------------------------------
-        # planner reset (MANUAL -> AUTO, only once)
-        # ----------------------------------------------------------
-        if self.mode == DriveMode.AUTO and not self._planner_reset_done:
+        if self.mode == DriveMode.AUTO and self._force_planner_reset:
             self._reset_agent_planner()
-            self._planner_reset_done = True
+            self._force_planner_reset = False
+            self._handover_alpha = None
 
         # ----------------------------------------------------------
-        # low-speed assist (bias, not override)
+        # ALWAYS run agent in AUTO
         # ----------------------------------------------------------
-        vel = self.vehicle.get_velocity()
-        speed = (vel.x**2 + vel.y**2 + vel.z**2) ** 0.5
+        if self.mode == DriveMode.AUTO:
+            try:
+                control = self.agent.run_step()
+            except Exception as e:
+                print("[WARN] run_step failed:", e)
+                return carla.VehicleControl(brake=0.3)
+        else:
+            # MANUAL mode → base control from human
+            control = carla.VehicleControl()
+            if self.wheel:
+                human = self.wheel.get_human_control()
 
-        if speed < 1.0:
-            control.throttle = max(control.throttle, 0.35)
-            control.brake = 0.0
+                control.steer = human.steer
+                control.throttle = human.throttle
+                control.brake = human.brake
 
-        # ----------------------------------------------------------
-        # steer rate limit (always)
-        # ----------------------------------------------------------
-        # delta = control.steer - self._last_steer
-        # if abs(delta) > self.MAX_STEER_RATE:
-        #     control.steer = self._last_steer + self.MAX_STEER_RATE * (1 if delta > 0 else -1)
-        # self._last_steer = control.steer
+        # waypoint debug
+        # wp = getattr(self.agent, "_incoming_waypoint", None)
+        # if wp is not None and wp.is_junction:
+        #     self._junction_seen = True
 
+        # if hasattr(self.agent, "_vehicle_state"):
+        #     if self.agent._vehicle_state:
+        #         self._collision_seen = True
+
+        # if control.brake > 0.8:
+        #     self._hard_brake_seen = True
+        
         # ----------------------------------------------------------
-        # MANUAL steer override
+        # handover smoothing (MANUAL → AUTO)
         # ----------------------------------------------------------
-        if self.mode == DriveMode.MANUAL and self.wheel:
+        if (
+                self._handover_alpha is not None
+                and self.wheel
+                and self.mode == DriveMode.AUTO
+            ):
             human = self.wheel.get_human_control()
-            control.steer = human.steer
+            a = self._handover_alpha
+
+            control.steer = (1 - a) * human.steer + a * control.steer
+
+            self._handover_alpha += self._handover_step
+            if self._handover_alpha >= 1.0:
+                self._handover_alpha = None
+
+        # ----------------------------------------------------------
+        # low-speed assist
+        # ----------------------------------------------------------
+        # vel = self.vehicle.get_velocity()
+        # speed = (vel.x**2 + vel.y**2 + vel.z**2) ** 0.5
+
+        # 감속 조건 기록
+        # if speed < 1.0:
+        #     self._slowdown_seen = True
 
         return control
