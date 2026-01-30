@@ -3,6 +3,14 @@
 
 """ This module contains the different parameters sets for each behavior. """
 
+class Custom:
+    max_speed = 20
+    speed_lim_dist = 2
+    speed_decrease = 12
+    safety_time = 3
+    min_proximity_threshold = 12
+    braking_distance = 6
+    tailgate_counter = 0
 
 class Cautious:
     """Class for Cautious agent."""
@@ -13,7 +21,6 @@ class Cautious:
     min_proximity_threshold = 12
     braking_distance = 6
     tailgate_counter = 0
-
 
 class Normal:
     """Class for Normal agent."""
