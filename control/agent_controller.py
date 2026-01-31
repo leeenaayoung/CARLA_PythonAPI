@@ -3,6 +3,7 @@ import time
 from enum import Enum
 from agents.navigation.controller import VehiclePIDController
 
+
 class DriveMode(Enum):
     AUTO = 0
     MANUAL = 1
@@ -37,7 +38,6 @@ class AgentController:
         self._slowdown_seen = False
         self._traffic_light_affected = False
         self._hard_brake_seen = False
-        self._arrived_logged = False
 
     # --------------------------------------------------------------
     # utility
@@ -68,11 +68,6 @@ class AgentController:
             start_location=ego_loc,
             clean_queue=True
         )
-    
-    # manual_control speed control
-    def _get_speed_kmh(self):
-        v = self.vehicle.get_velocity()
-        return 3.6 * (v.x**2 + v.y**2 + v.z**2) ** 0.5
 
     # --------------------------------------------------------------
     # main step
@@ -99,13 +94,17 @@ class AgentController:
                 self._handover_step = 1.0 / self.HANDOVER_STEPS
                 print("[MODE] MANUAL -> AUTO")
 
+        # ----------------------------------------------------------
         # planner reset (ONLY ONCE, before run_step)
+        # ----------------------------------------------------------
         if self.mode == DriveMode.AUTO and self._force_planner_reset:
             self._reset_agent_planner()
             self._force_planner_reset = False
             self._handover_alpha = None
 
-        # drive mode
+        # ----------------------------------------------------------
+        # ALWAYS run agent in AUTO
+        # ----------------------------------------------------------
         if self.mode == DriveMode.AUTO:
             try:
                 control = self.agent.run_step()
@@ -118,25 +117,9 @@ class AgentController:
             if self.wheel:
                 human = self.wheel.get_human_control()
 
-                speed = self._get_speed_kmh()
-                max_speed = self.agent._behavior.max_speed  # km/h
-
-                throttle = human.throttle
-                brake = human.brake
-
-                # soft speed cap
-                if speed > max_speed:
-                    throttle = 0.0
-                elif speed > max_speed - 5:
-                    throttle *= 0.5
-
                 control.steer = human.steer
-                control.throttle = throttle
-                control.brake = brake
-
-        if self.agent.done() and not self._arrived_logged:
-            print("[DEBUG] Destination reached")
-            self._arrived_logged = True
+                control.throttle = human.throttle
+                control.brake = human.brake
 
         # waypoint debug
         # wp = getattr(self.agent, "_incoming_waypoint", None)
@@ -150,13 +133,14 @@ class AgentController:
         # if control.brake > 0.8:
         #     self._hard_brake_seen = True
         
+        # ----------------------------------------------------------
         # handover smoothing (MANUAL → AUTO)
+        # ----------------------------------------------------------
         if (
                 self._handover_alpha is not None
                 and self.wheel
                 and self.mode == DriveMode.AUTO
             ):
-
             human = self.wheel.get_human_control()
             a = self._handover_alpha
 
@@ -166,7 +150,9 @@ class AgentController:
             if self._handover_alpha >= 1.0:
                 self._handover_alpha = None
 
+        # ----------------------------------------------------------
         # low-speed assist
+        # ----------------------------------------------------------
         # vel = self.vehicle.get_velocity()
         # speed = (vel.x**2 + vel.y**2 + vel.z**2) ** 0.5
 
