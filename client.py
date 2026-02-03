@@ -16,10 +16,37 @@ client.set_timeout(10.0)
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client, town="Town05"):
+def setup_world(client, town="Town03"): # set town here
     client.load_world(town)
     world = client.get_world()
     map = world.get_map()
+
+    # set weather
+    weather = carla.WeatherParameters(
+                cloudiness=80.0,
+                precipitation=60.0,
+                precipitation_deposits=50.0,
+                wind_intensity=60.0,
+                fog_density=20.0,
+                fog_distance=20.0,
+                wetness=50.0,
+                fog_falloff=0.5,
+                scattering_intensity=50.0,
+                mie_scattering_scale=50.0,
+                rayleigh_scattering_scale=0.5,
+                dust_storm=70.0
+            )
+    
+    world.set_weather(weather)
+
+    # weather = world.get_weather()
+
+    # for _ in range(20):
+    #     weather.fog_density += 5.0
+    #     weather.precipitation += 15.0
+    #     weather.cloudiness += 10.0
+    #     weather.dust_storm += 10.0
+    #     world.set_weather(weather)
 
     settings = world.get_settings()
     settings.synchronous_mode = True    # synchronous mode
@@ -57,6 +84,8 @@ def setup_camera(world, vehicle, width=800, height=600):
     camera_bp.set_attribute("image_size_x", str(width))
     camera_bp.set_attribute("image_size_y", str(height))
     camera_bp.set_attribute("fov", "65")
+    # camera_bp.set_attribute("enable_postprocess_effects", "false")
+    camera_bp.set_attribute("exposure_mode", "manual")
 
     camera = world.spawn_actor(
                                 camera_bp,
