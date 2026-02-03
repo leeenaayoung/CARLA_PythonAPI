@@ -151,7 +151,7 @@ def main():
         )
 
         # if target_wp and target_wp.road_id == ego_wp.road_id:
-        if target_wp and target_wp.transform.location.distance(ego.get_location()) > 1000.0:
+        if target_wp and target_wp.transform.location.distance(ego.get_location()) > 100.0:
             target_location = target_wp.transform.location
             break
     
