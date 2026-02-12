@@ -201,7 +201,7 @@ class GlobalRoutePlanner:
 
             entry_carla_vector = entry_wp.transform.rotation.get_forward_vector()
             exit_carla_vector = exit_wp.transform.rotation.get_forward_vector()
-            net_carla_vector = (exit_wp.transform.location - entry_wp.transform.location).make_unit_vector()
+            net_carla_vector = (exit_wp.transform.location - entry_wp.transform.location).make_unit_vector(1e-6)
 
             # Adding edge with attributes
             self._graph.add_edge(

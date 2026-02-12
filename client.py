@@ -12,32 +12,34 @@ from control.KeyboardModeToggle import KeyboardModeToggle
 from agents.navigation.behavior_agent import BehaviorAgent
 
 client = carla.Client('localhost', 2000)
-client.set_timeout(10.0) 
+client.set_timeout(0.0) 
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client, town="Town03"): # set town here
-    client.load_world(town)
+def setup_world(client, town="Town10HD_Opt"):   # set town here
+    # client.load_world(town)
     world = client.get_world()
     map = world.get_map()
 
     # set weather
-    weather = carla.WeatherParameters(
-                cloudiness=80.0,
-                precipitation=60.0,
-                precipitation_deposits=50.0,
-                wind_intensity=60.0,
-                fog_density=20.0,
-                fog_distance=20.0,
-                wetness=50.0,
-                fog_falloff=0.5,
-                scattering_intensity=50.0,
-                mie_scattering_scale=50.0,
-                rayleigh_scattering_scale=0.5,
-                dust_storm=70.0
-            )
+    # weather = carla.WeatherParameters(
+    #             cloudiness=30.0,
+    #             precipitation=60.0,
+    #             precipitation_deposits=60.0,
+    #             wind_intensity=30.0,
+    #             sun_altitude_angle=45.0,
+    #             sun_azimuth_angle=300.0,
+    #             fog_density=20.0,
+    #             fog_distance=0.8,
+    #             fog_falloff=0.8,
+    #             wetness=40.0,
+    #             scattering_intensity=30.0,
+    #             mie_scattering_scale=0.03,
+    #             rayleigh_scattering_scale=0.0,
+    #             dust_storm=50.0
+    #         )
     
-    world.set_weather(weather)
+    # world.set_weather(weather)
 
     # weather = world.get_weather()
 
