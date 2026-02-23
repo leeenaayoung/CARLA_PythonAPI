@@ -7,7 +7,6 @@ class DriveMode(Enum):
     AUTO = 0
     MANUAL = 1
 
-
 class AgentController:
     def __init__(self, agent, wheel):
         self.agent = agent
@@ -73,6 +72,56 @@ class AgentController:
     def _get_speed_kmh(self):
         v = self.vehicle.get_velocity()
         return 3.6 * (v.x**2 + v.y**2 + v.z**2) ** 0.5
+    
+    # --------------------------------------------------------------
+    # import the ego vehicle's state
+    # --------------------------------------------------------------
+    def get_vehicle_state(self):
+        vehicle = self.vehicle
+
+        transform = vehicle.get_transform()
+        location = transform.location
+        rotation = transform.rotation
+
+        velocity = vehicle.get_velocity()
+        acceleration = vehicle.get_acceleration()
+        angular_velocity = vehicle.get_angular_velocity()
+
+        control = vehicle.get_control()
+
+        speed_kmh = 3.6 * (velocity.x**2 + velocity.y**2 + velocity.z**2) ** 0.5
+
+        waypoint = vehicle.get_world().get_map().get_waypoint(
+            location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+
+        return {
+            "x": location.x,
+            "y": location.y,
+            "z": location.z,
+            "yaw": rotation.yaw,
+            "pitch": rotation.pitch,
+            "roll": rotation.roll,
+            "vx": velocity.x,
+            "vy": velocity.y,
+            "vz": velocity.z,
+            "ax": acceleration.x,
+            "ay": acceleration.y,
+            "az": acceleration.z,
+            "wx": angular_velocity.x,
+            "wy": angular_velocity.y,
+            "wz": angular_velocity.z,
+            "speed_kmh": speed_kmh,
+            "throttle": control.throttle,
+            "steer": control.steer,
+            "brake": control.brake,
+            "gear": control.gear,
+            "lane_id": waypoint.lane_id if waypoint else None,
+            "road_id": waypoint.road_id if waypoint else None,
+            "is_junction": waypoint.is_junction if waypoint else None
+        }
 
     # --------------------------------------------------------------
     # main step

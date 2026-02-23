@@ -1,7 +1,9 @@
 import carla
-import random
+import csv
+import os
 import pygame
 import numpy as np
+from datetime import datetime
 
 from npc.generate_npc import spawn_npc_vehicles
 
@@ -12,12 +14,12 @@ from control.KeyboardModeToggle import KeyboardModeToggle
 from agents.navigation.behavior_agent import BehaviorAgent
 
 client = carla.Client('localhost', 2000)
-client.set_timeout(0.0) 
+client.set_timeout(2000.0) 
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client, town="Town10HD_Opt"):   # set town here
-    # client.load_world(town)
+def setup_world(client, town="Town10HD_Opt") -> carla.World:
+    client.load_world(town)
     world = client.get_world()
     map = world.get_map()
 
@@ -105,8 +107,19 @@ def spawn_vehicle(world):
     blueprints = world.get_blueprint_library()
     # vehicle_bp = blueprints.filter('vehicle')[0]
     vehicle_bp = blueprints.filter('vehicle.tesla.model3')[0]
+    vehicle_bp.set_attribute("role_name", "hero")
+
     spawn_points = world.get_map().get_spawn_points()
-    vehicle = world.spawn_actor(vehicle_bp, spawn_points[0])
+    # debug
+    print("Spawn points:", len(spawn_points))
+
+    vehicle = world.spawn_actor(vehicle_bp, spawn_points[0])    # fixed spawn point
+    # debug
+    if vehicle is None:
+        print("Spawn failed")
+    else:
+        print("Spawned vehicle:", vehicle.id)
+
     return vehicle
 
 #spectator setup
@@ -146,13 +159,40 @@ def main():
 
     mode_toggle  = KeyboardModeToggle()
 
+    collision_sensor = None
+    camera = None
+    log_file = None
+
     # ego vehicle
     ego = spawn_vehicle(world)
+    world.tick() 
+
     setup_spectator(world, ego)
 
     ego.apply_control(carla.VehicleControl(brake=1.0))
     for _ in range(10):
         world.tick()
+
+    # add coliison sensor
+    collision_bp = world.get_blueprint_library().find("sensor.other.collision")
+
+    collision_flag = {"value": 0}
+    collision_intensity = {"value": 0.0}
+
+    def collision_callback(event):
+        impulse = event.normal_impulse
+        intensity = (impulse.x**2 + impulse.y**2 + impulse.z**2) ** 0.5
+
+        collision_flag["value"] = 1
+        collision_intensity["value"] = intensity
+
+    collision_sensor = world.spawn_actor(
+        collision_bp,
+        carla.Transform(),
+        attach_to=ego
+    )
+
+    collision_sensor.listen(collision_callback)
 
     # agent
     agent = BehaviorAgent(ego, behavior='custom')
@@ -170,25 +210,21 @@ def main():
         lane_type=carla.LaneType.Driving
     )
 
-    while True:
-        sp = random.choice(spawn_points)
-        target_wp = world.get_map().get_waypoint(
-            sp.location,
-            project_to_road=True,
-            lane_type=carla.LaneType.Driving
-        )
+    # fixed target location
+    target_wp = world.get_map().get_waypoint(
+        spawn_points[10].location,
+        project_to_road=True,
+        lane_type=carla.LaneType.Driving
+    )
 
-        # if target_wp and target_wp.road_id == ego_wp.road_id:
-        if target_wp and target_wp.transform.location.distance(ego.get_location()) > 200.0:
-            target_location = target_wp.transform.location
-            break
+    target_location = target_wp.transform.location
     
     agent.set_destination(target_location)
 
     for _ in range(10):
         world.tick()
 
-    # steering_wheel
+    # steering_wheel setup
     wheel = None
     try:
         wheel = WheelController(config_path="wheel_config.ini")
@@ -219,6 +255,30 @@ def main():
 
     print("Simulation running... Ctrl+C to quit")
 
+    # vehicle state logging setup
+    log_dir = "ego_state"
+    os.makedirs(log_dir, exist_ok=True)
+
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    log_path = os.path.join(log_dir, f"ego_log_{timestamp_str}.csv")
+
+    log_file = open(log_path, "w", newline="")
+    
+    writer = csv.writer(log_file)
+    writer.writerow([
+        "time",
+        "x","y","z",
+        "yaw","pitch","roll",
+        "vx","vy","vz",
+        "ax","ay","az",
+        "wx","wy","wz",
+        "speed_kmh",
+        "throttle","steer","brake","gear",
+        "lane_id","road_id","is_junction",
+        "collision","collision_intensity"
+    ])
+
     try:
         while True:
             # world.wait_for_tick() # async mode
@@ -228,17 +288,28 @@ def main():
 
             mode_toggle.parse_events()
 
-            # Debug info
-            # if int(world.get_snapshot().timestamp.elapsed_seconds) % 1 == 0:
-            #     ego_loc = ego.get_location()
-            #     ego_wp = world.get_map().get_waypoint(
-            #         ego_loc,
-            #         project_to_road=True,
-            #         lane_type=carla.LaneType.Driving
-            #     )
-
             control = agent_controller.step(mode_toggle)
             ego.apply_control(control)
+
+            state = agent_controller.get_vehicle_state()
+            timestamp = world.get_snapshot().timestamp.elapsed_seconds
+
+            writer.writerow([
+                timestamp,
+                state["x"], state["y"], state["z"],
+                state["yaw"], state["pitch"], state["roll"],
+                state["vx"], state["vy"], state["vz"],
+                state["ax"], state["ay"], state["az"],
+                state["wx"], state["wy"], state["wz"],
+                state["speed_kmh"],
+                state["throttle"], state["steer"], state["brake"], state["gear"],
+                state["lane_id"], state["road_id"], state["is_junction"],
+                collision_flag["value"],
+                collision_intensity["value"]
+            ])
+
+            collision_flag["value"] = 0
+            collision_intensity["value"] = 0.0
 
             follow_ego_spectator(world, ego)
 
@@ -247,13 +318,9 @@ def main():
 
     finally:
         print("Cleaning up actors...")
-
-        # debuging log
-        # print("Junction seen:", agent_controller._junction_seen)
-        # print("Slowdown seen:", agent_controller._slowdown_seen)
-        # print("Traffic light affected:", agent_controller._traffic_light_affected)
-        # print("hard_brake_seen:", agent_controller._hard_brake_seen)
-
+        collision_sensor.stop()
+        collision_sensor.destroy()
+        log_file.close()
         ego.destroy()
         camera.stop()
         camera.destroy()
