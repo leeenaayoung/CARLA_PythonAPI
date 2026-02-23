@@ -13,9 +13,9 @@ This repository contains Python scripts for:
 ## Environment
 
 - CARLA 0.9.16
-- Python 3.12
+- Python 3.10.19
 - OS: Windows 10 / 11
-- GPU: NVIDIA GPU (tested on RTX 2080)
+- GPU: NVIDIA GPU (tested on RTX 3060)
 
 ## Input Devices
 
