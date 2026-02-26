@@ -212,7 +212,7 @@ def main():
 
     # fixed target location
     target_wp = world.get_map().get_waypoint(
-        spawn_points[10].location,
+        spawn_points[5].location,
         project_to_road=True,
         lane_type=carla.LaneType.Driving
     )
