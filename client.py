@@ -1,4 +1,5 @@
 import carla
+import math
 import csv
 import os
 import pygame
@@ -18,7 +19,7 @@ client.set_timeout(2000.0)
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client, town="Town10HD_Opt") -> carla.World:
+def setup_world(client, town="Town02_Opt") -> carla.World:
     client.load_world(town)
     world = client.get_world()
     map = world.get_map()
@@ -98,7 +99,7 @@ def setup_camera(world, vehicle, width=800, height=600):
                                         carla.Rotation(pitch=-9.0, yaw=0.0, roll=0.0)
                                         ),
                                         attach_to=vehicle
-                                    )
+                                )
 
     return camera
 
@@ -113,14 +114,92 @@ def spawn_vehicle(world):
     # debug
     print("Spawn points:", len(spawn_points))
 
-    vehicle = world.spawn_actor(vehicle_bp, spawn_points[0])    # fixed spawn point
-    # debug
-    if vehicle is None:
-        print("Spawn failed")
-    else:
-        print("Spawned vehicle:", vehicle.id)
+    # vehicle = world.spawn_actor(vehicle_bp, spawn_points[154])    # fixed spawn point
+    vehicle = world.spawn_actor(vehicle_bp, spawn_points[80])
+    vehicle_tf = vehicle.get_transform()
+
+    print("vehicle_tf:", vehicle_tf)
 
     return vehicle
+
+# add friction zone for testing
+# def spawn_friction_zone(world, x, y, z, yaw=0.0,
+#                         friction=0.001,
+#                         extent_x=1200, extent_y=250, extent_z=200):
+#     bp = world.get_blueprint_library().find('static.trigger.friction')
+
+#     bp.set_attribute('friction', str(friction))
+#     bp.set_attribute('extent_x', str(extent_x))   
+#     bp.set_attribute('extent_y', str(extent_y))   
+#     bp.set_attribute('extent_z', str(extent_z))   
+
+#     transform = carla.Transform(
+#         carla.Location(x=x, y=y, z=z),
+#         carla.Rotation(yaw=yaw)
+#     )
+
+#     trigger = world.spawn_actor(bp, transform)
+
+#     return trigger
+
+# def move_forward(transform, distance_m):
+#     yaw_rad = math.radians(transform.rotation.yaw)
+
+#     new_location = carla.Location(
+#         x=transform.location.x + distance_m * math.cos(yaw_rad),
+#         y=transform.location.y + distance_m * math.sin(yaw_rad),
+#         z=transform.location.z
+#     )
+
+#     return carla.Transform(new_location, transform.rotation)
+
+# def is_inside_friction_zone(vehicle, trigger, extent_x_cm, extent_y_cm, extent_z_cm):
+#     vt = vehicle.get_transform()
+#     tt = trigger.get_transform()
+
+#     dx = vt.location.x - tt.location.x
+#     dy = vt.location.y - tt.location.y
+#     dz = vt.location.z - tt.location.z
+
+#     yaw = math.radians(tt.rotation.yaw)
+#     local_x =  dx * math.cos(yaw) + dy * math.sin(yaw)
+#     local_y = -dx * math.sin(yaw) + dy * math.cos(yaw)
+#     local_z = dz
+
+#     ex = extent_x_cm / 100.0
+#     ey = extent_y_cm / 100.0
+#     ez = extent_z_cm / 100.0
+
+#     inside = (
+#         abs(local_x) <= ex and
+#         abs(local_y) <= ey and
+#         abs(local_z) <= ez
+#     )
+
+#     return inside, local_x, local_y, local_z
+
+# def set_normal_wheels(vehicle):
+#     physics = vehicle.get_physics_control()
+#     wheels = physics.wheels
+
+#     for w in wheels:
+#         w.tire_friction = 2.0
+
+#     physics.wheels = wheels
+#     vehicle.apply_physics_control(physics)
+
+# def set_slippery_oversteer_wheels(vehicle):
+#     physics = vehicle.get_physics_control()
+#     wheels = physics.wheels
+
+#     wheels[0].tire_friction = 1.8
+#     wheels[1].tire_friction = 1.8
+
+#     wheels[2].tire_friction = 0.18
+#     wheels[3].tire_friction = 0.18
+
+#     physics.wheels = wheels
+#     vehicle.apply_physics_control(physics)
 
 #spectator setup
 def setup_spectator(world, vehicle):
@@ -147,9 +226,19 @@ def follow_ego_spectator(world, ego, height=2.5, pitch=-20):
 
 def main():
     pygame.init()
+    pygame.mixer.init()
+
     screen = pygame.display.set_mode((1080, 600))
     screen.fill((30, 30, 30))
     pygame.display.flip()
+
+    # background music setup
+    wind_path = os.path.join("assets", "audio", "wind_sample.wav")
+
+    pygame.mixer.music.load(wind_path)
+    pygame.mixer.music.set_volume(0.3)
+    pygame.mixer.music.play(loops=-1)
+
     clock = pygame.time.Clock()
 
     client = carla.Client('localhost', 2000)    # CARLA server connect
@@ -212,14 +301,24 @@ def main():
 
     # fixed target location
     target_wp = world.get_map().get_waypoint(
-        spawn_points[5].location,
+        spawn_points[0].location,
         project_to_road=True,
         lane_type=carla.LaneType.Driving
     )
 
     target_location = target_wp.transform.location
-    
     agent.set_destination(target_location)
+
+    # trigger_tf = move_forward(target_wp.transform, -15.0)
+    # print("trigger_tf =", trigger_tf)
+
+    # print("[TARGET]")
+    # print(f"x={target_wp.transform.location.x:.3f}, y={target_wp.transform.location.y:.3f}, z={target_wp.transform.location.z:.3f}")
+    # print(f"yaw={target_wp.transform.rotation.yaw:.3f}")
+
+    # print("[TRIGGER_CANDIDATE_15M_BEFORE_TARGET]")
+    # print(f"x={trigger_tf.location.x:.3f}, y={trigger_tf.location.y:.3f}, z={trigger_tf.location.z:.3f}")
+    # print(f"yaw={trigger_tf.rotation.yaw:.3f}")
 
     for _ in range(10):
         world.tick()
