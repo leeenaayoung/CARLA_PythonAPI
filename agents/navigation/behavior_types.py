@@ -4,9 +4,9 @@
 """ This module contains the different parameters sets for each behavior. """
 
 class Custom:
-    max_speed = 40
-    speed_lim_dist = 4
-    speed_decrease = 12
+    max_speed = 50
+    speed_lim_dist = 2
+    speed_decrease = 10
     safety_time = 3
     min_proximity_threshold = 12
     braking_distance = 6
