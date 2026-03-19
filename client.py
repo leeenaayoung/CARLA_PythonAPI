@@ -19,7 +19,7 @@ client.set_timeout(2000.0)
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client, town="Town02_Opt") -> carla.World:
+def setup_world(client, town="Town01_Opt") -> carla.World:
     client.load_world(town)
     world = client.get_world()
     map = world.get_map()
@@ -233,11 +233,11 @@ def main():
     pygame.display.flip()
 
     # background music setup
-    wind_path = os.path.join("assets", "audio", "wind_sample.wav")
+    # wind_path = os.path.join("assets", "audio", "wind_sample.wav")
 
-    pygame.mixer.music.load(wind_path)
-    pygame.mixer.music.set_volume(0.3)
-    pygame.mixer.music.play(loops=-1)
+    # pygame.mixer.music.load(wind_path)
+    # pygame.mixer.music.set_volume(0.3)
+    # pygame.mixer.music.play(loops=-1)
 
     clock = pygame.time.Clock()
 
