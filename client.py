@@ -19,7 +19,7 @@ client.set_timeout(2000.0)
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client, town="Town02_Opt") -> carla.World:
+def setup_world(client, town="Town04_Opt") -> carla.World:
     client.load_world(town)
     world = client.get_world()
     map = world.get_map()
