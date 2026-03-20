@@ -106,100 +106,37 @@ def setup_camera(world, vehicle, width=800, height=600):
 # ego vehicle spawn
 def spawn_vehicle(world):
     blueprints = world.get_blueprint_library()
-    # vehicle_bp = blueprints.filter('vehicle')[0]
     vehicle_bp = blueprints.filter('vehicle.tesla.model3')[0]
     vehicle_bp.set_attribute("role_name", "hero")
 
-    spawn_points = world.get_map().get_spawn_points()
-    # debug
-    print("Spawn points:", len(spawn_points))
+    # same location in Unreal Engine, but *0.01 scale
+    start_raw = carla.Transform(
+                                carla.Location(x=-3.68, y=219.41, z=0.50),  # Town02_Opt start = (-3.68, 219.41, 0.50), PlayerStart5
+                                carla.Rotation(pitch=0.0, yaw=-89.87, roll=0.0)
+                                )
 
-    # vehicle = world.spawn_actor(vehicle_bp, spawn_points[154])    # fixed spawn point
-    vehicle = world.spawn_actor(vehicle_bp, spawn_points[80])
-    vehicle_tf = vehicle.get_transform()
+    spawn_wp = world.get_map().get_waypoint(
+        start_raw.location,
+        project_to_road=True,
+        lane_type=carla.LaneType.Driving
+    )
 
-    print("vehicle_tf:", vehicle_tf)
+    if spawn_wp is None:
+        raise RuntimeError(f"No driving waypoint near start_raw: {start_raw}")
 
+    spawn_tf = spawn_wp.transform
+    spawn_tf.location.z += 0.3
+
+    print("start_raw:", start_raw)
+    print("projected spawn_tf:", spawn_tf)
+
+    vehicle = world.try_spawn_actor(vehicle_bp, spawn_tf)
+    if vehicle is None:
+        raise RuntimeError(f"Failed to spawn ego at {spawn_tf}")
+
+    world.tick()
+    # print("vehicle_tf after tick:", vehicle.get_transform())
     return vehicle
-
-# add friction zone for testing
-# def spawn_friction_zone(world, x, y, z, yaw=0.0,
-#                         friction=0.001,
-#                         extent_x=1200, extent_y=250, extent_z=200):
-#     bp = world.get_blueprint_library().find('static.trigger.friction')
-
-#     bp.set_attribute('friction', str(friction))
-#     bp.set_attribute('extent_x', str(extent_x))   
-#     bp.set_attribute('extent_y', str(extent_y))   
-#     bp.set_attribute('extent_z', str(extent_z))   
-
-#     transform = carla.Transform(
-#         carla.Location(x=x, y=y, z=z),
-#         carla.Rotation(yaw=yaw)
-#     )
-
-#     trigger = world.spawn_actor(bp, transform)
-
-#     return trigger
-
-# def move_forward(transform, distance_m):
-#     yaw_rad = math.radians(transform.rotation.yaw)
-
-#     new_location = carla.Location(
-#         x=transform.location.x + distance_m * math.cos(yaw_rad),
-#         y=transform.location.y + distance_m * math.sin(yaw_rad),
-#         z=transform.location.z
-#     )
-
-#     return carla.Transform(new_location, transform.rotation)
-
-# def is_inside_friction_zone(vehicle, trigger, extent_x_cm, extent_y_cm, extent_z_cm):
-#     vt = vehicle.get_transform()
-#     tt = trigger.get_transform()
-
-#     dx = vt.location.x - tt.location.x
-#     dy = vt.location.y - tt.location.y
-#     dz = vt.location.z - tt.location.z
-
-#     yaw = math.radians(tt.rotation.yaw)
-#     local_x =  dx * math.cos(yaw) + dy * math.sin(yaw)
-#     local_y = -dx * math.sin(yaw) + dy * math.cos(yaw)
-#     local_z = dz
-
-#     ex = extent_x_cm / 100.0
-#     ey = extent_y_cm / 100.0
-#     ez = extent_z_cm / 100.0
-
-#     inside = (
-#         abs(local_x) <= ex and
-#         abs(local_y) <= ey and
-#         abs(local_z) <= ez
-#     )
-
-#     return inside, local_x, local_y, local_z
-
-# def set_normal_wheels(vehicle):
-#     physics = vehicle.get_physics_control()
-#     wheels = physics.wheels
-
-#     for w in wheels:
-#         w.tire_friction = 2.0
-
-#     physics.wheels = wheels
-#     vehicle.apply_physics_control(physics)
-
-# def set_slippery_oversteer_wheels(vehicle):
-#     physics = vehicle.get_physics_control()
-#     wheels = physics.wheels
-
-#     wheels[0].tire_friction = 1.8
-#     wheels[1].tire_friction = 1.8
-
-#     wheels[2].tire_friction = 0.18
-#     wheels[3].tire_friction = 0.18
-
-#     physics.wheels = wheels
-#     vehicle.apply_physics_control(physics)
 
 #spectator setup
 def setup_spectator(world, vehicle):
@@ -248,6 +185,11 @@ def main():
 
     mode_toggle  = KeyboardModeToggle()
 
+    # actors = world.get_actors()
+
+    # for actor in actors:
+    #     print(actor.id, actor.type_id, actor.get_transform())
+
     collision_sensor = None
     camera = None
     log_file = None
@@ -284,12 +226,12 @@ def main():
     collision_sensor.listen(collision_callback)
 
     # agent
-    agent = BehaviorAgent(ego, behavior='custom')
+    agent = BehaviorAgent(ego, behavior='drive_mode')
 
     # NPC vehicles
     tm = setup_traffic_manager(client, sync=True)
     tm.set_random_device_seed(0)
-    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=15) 
+    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30) 
 
     spawn_points = world.get_map().get_spawn_points()
 
@@ -300,25 +242,50 @@ def main():
     )
 
     # fixed target location
+    # target_wp = world.get_map().get_waypoint(
+    #     spawn_points[60].location,
+    #     project_to_road=True,
+    #     lane_type=carla.LaneType.Driving
+    # )
+    target_raw = carla.Transform(
+                                carla.Location(x=-7.53, y=234.11, z=0.50),  # Town02_Opt target = (x=-7.53, y=234.11, z=0.50), PlayerStart102
+                                carla.Rotation(pitch=0.0, yaw=90.0, roll=0.0)
+                                )
+    
     target_wp = world.get_map().get_waypoint(
-        spawn_points[0].location,
+                    target_raw.location,
+                    project_to_road=True,
+                    lane_type=carla.LaneType.Driving
+                )
+    
+    if target_wp is None:
+        raise RuntimeError(f"No driving waypoint near target_raw: {target_raw}")
+
+    target_location = target_wp.transform.location
+    
+    start_loc = ego.get_location()
+    end_loc = target_location
+    # agent.set_destination(target_location)
+
+    agent.set_destination(end_loc, start_location=start_loc)
+
+    start_wp = world.get_map().get_waypoint(
+    ego.get_location(),
+    project_to_road=True,
+    lane_type=carla.LaneType.Driving
+    )
+
+    end_wp = world.get_map().get_waypoint(
+        target_location,
         project_to_road=True,
         lane_type=carla.LaneType.Driving
     )
 
-    target_location = target_wp.transform.location
-    agent.set_destination(target_location)
+    print("start road/lane:", start_wp.road_id, start_wp.lane_id)
+    print("end road/lane:", end_wp.road_id, end_wp.lane_id)
 
-    # trigger_tf = move_forward(target_wp.transform, -15.0)
-    # print("trigger_tf =", trigger_tf)
-
-    # print("[TARGET]")
-    # print(f"x={target_wp.transform.location.x:.3f}, y={target_wp.transform.location.y:.3f}, z={target_wp.transform.location.z:.3f}")
-    # print(f"yaw={target_wp.transform.rotation.yaw:.3f}")
-
-    # print("[TRIGGER_CANDIDATE_15M_BEFORE_TARGET]")
-    # print(f"x={trigger_tf.location.x:.3f}, y={trigger_tf.location.y:.3f}, z={trigger_tf.location.z:.3f}")
-    # print(f"yaw={trigger_tf.rotation.yaw:.3f}")
+    route = agent.trace_route(start_wp, end_wp)
+    print("route length:", len(route))
 
     for _ in range(10):
         world.tick()

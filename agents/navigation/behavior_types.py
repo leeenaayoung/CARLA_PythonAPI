@@ -3,9 +3,27 @@
 
 """ This module contains the different parameters sets for each behavior. """
 
-class Custom:
+class DriveMode:
+    max_speed = 60
+    speed_lim_dist = 2
+    speed_decrease = 8
+    safety_time = 3
+    min_proximity_threshold = 12
+    braking_distance = 6
+    tailgate_counter = 0
+
+class BlackIce:
     max_speed = 50
     speed_lim_dist = 2
+    speed_decrease = 10
+    safety_time = 3
+    min_proximity_threshold = 12
+    braking_distance = 6
+    tailgate_counter = 0
+
+class CrossWind:
+    max_speed = 55
+    speed_lim_dist = 1
     speed_decrease = 10
     safety_time = 3
     min_proximity_threshold = 12

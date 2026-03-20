@@ -12,7 +12,7 @@ import numpy as np
 import carla
 from agents.navigation.basic_agent import BasicAgent
 from agents.navigation.local_planner import RoadOption
-from agents.navigation.behavior_types import Cautious, Aggressive, Normal, Custom
+from agents.navigation.behavior_types import Cautious, Aggressive, Normal, BlackIce, CrossWind, DriveMode
 
 from agents.tools.misc import get_speed, positive
 
@@ -60,8 +60,14 @@ class BehaviorAgent(BasicAgent):
         elif behavior == 'aggressive':
             self._behavior = Aggressive()
         
-        elif behavior == 'custom':
-            self._behavior = Custom()
+        elif behavior == 'black_ice':
+            self._behavior = BlackIce()
+
+        elif behavior == 'cross_wind':
+            self._behavior = CrossWind()
+        
+        elif behavior == 'drive_mode':
+            self._behavior = DriveMode()
     
     def _update_information(self):
         """
