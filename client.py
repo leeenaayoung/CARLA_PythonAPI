@@ -14,8 +14,8 @@ from control.KeyboardModeToggle import KeyboardModeToggle
 
 from agents.navigation.behavior_agent import BehaviorAgent
 
-client = carla.Client('localhost', 2000)
-client.set_timeout(2000.0) 
+# client = carla.Client('localhost', 2000)
+# client.set_timeout(200.0) 
 # client.start_recorder('recording.log')
 
 #  env setup
@@ -170,11 +170,11 @@ def main():
     pygame.display.flip()
 
     # background music setup
-    wind_path = os.path.join("assets", "audio", "wind_sample.wav")
+    # wind_path = os.path.join("assets", "audio", "wind_sample.wav")
 
-    pygame.mixer.music.load(wind_path)
-    pygame.mixer.music.set_volume(0.3)
-    pygame.mixer.music.play(loops=-1)
+    # pygame.mixer.music.load(wind_path)
+    # pygame.mixer.music.set_volume(0.3)
+    # pygame.mixer.music.play(loops=-1)
 
     clock = pygame.time.Clock()
 
