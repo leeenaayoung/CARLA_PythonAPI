@@ -95,7 +95,7 @@ def setup_camera(world, vehicle, width=800, height=600):
     camera = world.spawn_actor(
                                 camera_bp,
                                 carla.Transform(
-                                        carla.Location(x=0.05, y=-0.23, z=1.18),
+                                        carla.Location(x=0.07, y=-0.5, z=1.18),
                                         carla.Rotation(pitch=-9.0, yaw=0.0, roll=0.0)
                                         ),
                                         attach_to=vehicle
@@ -106,13 +106,13 @@ def setup_camera(world, vehicle, width=800, height=600):
 # ego vehicle spawn
 def spawn_vehicle(world):
     blueprints = world.get_blueprint_library()
-    vehicle_bp = blueprints.filter('vehicle.tesla.model3')[0]
+    vehicle_bp = blueprints.filter('vehicle.ford.mustang')[0]
     vehicle_bp.set_attribute("role_name", "hero")
 
     # same location in Unreal Engine, but *0.01 scale
     start_raw = carla.Transform(
-                                carla.Location(x=-3.68, y=219.41, z=0.50),  # Town02_Opt start = (-3.68, 219.41, 0.50), PlayerStart5
-                                carla.Rotation(pitch=0.0, yaw=-89.87, roll=0.0)
+                                carla.Location(x=258.46, y=-180.46, z=0.40),  # Town04_Opt start = (x=11.77, y=-43.63, z=0.28), VehicleSpawnPoint294
+                                carla.Rotation(pitch=0.0, yaw=-89.82, roll=0.0)
                                 )
 
     spawn_wp = world.get_map().get_waypoint(
@@ -137,6 +137,55 @@ def spawn_vehicle(world):
     world.tick()
     # print("vehicle_tf after tick:", vehicle.get_transform())
     return vehicle
+
+def spawn_npc_in_front(world, ego_vehicle, tm, distance=20.0, z_offset=0.3):
+    bp_lib = world.get_blueprint_library()
+
+    # ego랑 같은 차종만 피하고 싶으면 적당히 필터
+    candidates = bp_lib.filter('vehicle.*')
+    npc_bp = None
+
+    for bp in candidates:
+        if bp.id != 'vehicle.tesla.model3':
+            npc_bp = bp
+            break
+
+    if npc_bp is None:
+        npc_bp = candidates[0]
+
+    ego_wp = world.get_map().get_waypoint(
+        ego_vehicle.get_location(),
+        project_to_road=True,
+        lane_type=carla.LaneType.Driving
+    )
+
+    if ego_wp is None:
+        print("No ego waypoint found")
+        return None
+
+    # 여러 거리로 재시도
+    for d in [distance, distance + 8.0, distance + 15.0, distance + 25.0]:
+        next_wps = ego_wp.next(d)
+        if not next_wps:
+            continue
+
+        target_wp = next_wps[0]
+        spawn_tf = target_wp.transform
+        spawn_tf.location.z += z_offset
+
+        npc = world.try_spawn_actor(npc_bp, spawn_tf)
+        if npc is not None:
+            npc.set_autopilot(True, tm.get_port())
+
+            # ego 바로 앞차처럼 너무 느리거나 멈추지 않게 약간 설정 가능
+            tm.vehicle_percentage_speed_difference(npc, -10.0)  # 살짝 빠르게
+            tm.distance_to_leading_vehicle(npc, 4.0)
+
+            print("Front NPC spawned at:", spawn_tf)
+            return npc
+
+    print("Failed to spawn front NPC")
+    return None
 
 #spectator setup
 def setup_spectator(world, vehicle):
@@ -165,16 +214,28 @@ def main():
     pygame.init()
     pygame.mixer.init()
 
-    screen = pygame.display.set_mode((1080, 600))
+    os.environ['SDL_VIDEO_WINDOW_POS'] = '0,30'
+
+    # screen = pygame.display.set_mode((1080, 600))
+    info = pygame.display.Info()
+    SCREEN_W, SCREEN_H = info.current_w, info.current_h - 30
+    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+
     screen.fill((30, 30, 30))
     pygame.display.flip()
 
     # background music setup
-    # wind_path = os.path.join("assets", "audio", "wind_sample.wav")
+    print("mixer init ok:", pygame.mixer.get_init())
 
-    # pygame.mixer.music.load(wind_path)
-    # pygame.mixer.music.set_volume(0.3)
-    # pygame.mixer.music.play(loops=-1)
+    wind_path = os.path.join("assets", "audio", "wind_sample.wav")
+    print("cwd:", os.getcwd())
+    print("wind exists:", os.path.exists(wind_path), wind_path)
+
+    pygame.mixer.music.load(wind_path)
+    pygame.mixer.music.set_volume(1.0)
+    pygame.mixer.music.play(loops=-1)
+
+    print("music busy right after play:", pygame.mixer.music.get_busy())
 
     clock = pygame.time.Clock()
 
@@ -230,8 +291,19 @@ def main():
 
     # NPC vehicles
     tm = setup_traffic_manager(client, sync=True)
+    # tm.set_random_device_seed(0)
+    # npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30)
     tm.set_random_device_seed(0)
-    npc_vehicles = spawn_npc_vehicles(world, tm, num_vehicles=30) 
+
+    front_npc = spawn_npc_in_front(world, ego, tm, distance=20.0)
+    npc_vehicles = []
+
+    if front_npc is not None:
+        npc_vehicles.append(front_npc)
+
+    # 나머지 차량들 랜덤 스폰
+    other_npcs = spawn_npc_vehicles(world, tm, num_vehicles=29)
+    npc_vehicles.extend(other_npcs)
 
     spawn_points = world.get_map().get_spawn_points()
 
@@ -247,9 +319,10 @@ def main():
     #     project_to_road=True,
     #     lane_type=carla.LaneType.Driving
     # )
+    
     target_raw = carla.Transform(
-                                carla.Location(x=-7.53, y=234.11, z=0.50),  # Town02_Opt target = (x=-7.53, y=234.11, z=0.50), PlayerStart102
-                                carla.Rotation(pitch=0.0, yaw=90.0, roll=0.0)
+                                carla.Location(x=246.87, y=-172.75, z=0.60),  # Town04_Opt target = (x=314.88, y=-213.09, z=0.28), VehicleSpawnPoint296
+                                carla.Rotation(pitch=0.0, yaw=-179.67, roll=0.0)
                                 )
     
     target_wp = world.get_map().get_waypoint(
@@ -303,7 +376,7 @@ def main():
     agent_controller._global_destination = target_location
 
     # setup camera
-    camera = setup_camera(world, ego, width=1080, height=600)
+    camera = setup_camera(world, ego, width=SCREEN_W, height=SCREEN_H)
 
     def camera_callback(image):
         array = np.frombuffer(image.raw_data, dtype=np.uint8)
