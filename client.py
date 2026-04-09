@@ -19,7 +19,7 @@ client.set_timeout(2000.0)
 # client.start_recorder('recording.log')
 
 #  env setup
-def setup_world(client, town="Town01_Opt") -> carla.World:
+def setup_world(client, town="Town04_Opt") -> carla.World:
     client.load_world(town)
     world = client.get_world()
     map = world.get_map()
@@ -104,19 +104,48 @@ def setup_camera(world, vehicle, width=800, height=600):
     return camera
 
 # ego vehicle spawn
+def find_nearest_spawn_point_index(spawn_points, target_transform):
+    target = target_transform.location
+    nearest_idx = None
+    nearest_dist_sq = float("inf")
+
+    for i, spawn_point in enumerate(spawn_points):
+        loc = spawn_point.location
+        dist_sq = (
+            (loc.x - target.x) ** 2 +
+            (loc.y - target.y) ** 2 +
+            (loc.z - target.z) ** 2
+        )
+        if dist_sq < nearest_dist_sq:
+            nearest_dist_sq = dist_sq
+            nearest_idx = i
+
+    return nearest_idx
+
+
 def spawn_vehicle(world):
     blueprints = world.get_blueprint_library()
     # vehicle_bp = blueprints.filter('vehicle')[0]
-    vehicle_bp = blueprints.filter('vehicle.tesla.model3')[0]
+    vehicle_bp = blueprints.filter('vehicle.ford.mustang')[0]
     vehicle_bp.set_attribute("role_name", "hero")
 
     spawn_points = world.get_map().get_spawn_points()
     # debug
-    print("Spawn points:", len(spawn_points))
+    
 
-    # vehicle = world.spawn_actor(vehicle_bp, spawn_points[154])    # fixed spawn point
-    vehicle = world.spawn_actor(vehicle_bp, spawn_points[80])
+    # 원하는 좌표 기준으로 가장 가까운 spawn point를 찾음
+    # 예: spawn_target_tf = carla.Transform(carla.Location(x=..., y=..., z=...), carla.Rotation())
+    spawn_target_tf = carla.Transform(carla.Location(x=35149.984375, y=-14280.618164, z=28.194244), carla.Rotation())
+    nearest_idx = find_nearest_spawn_point_index(spawn_points, spawn_target_tf)
+    print("nearest spawn point index:", nearest_idx, "/ total:", len(spawn_points))
+    if nearest_idx is None:
+        raise RuntimeError("No spawn points available.")
+
+    vehicle = world.spawn_actor(vehicle_bp, spawn_points[nearest_idx])    # spawn nearest point
     vehicle_tf = vehicle.get_transform()
+
+    print("Spawn points:", len(spawn_points))
+    print(spawn_points[nearest_idx], type(spawn_points[nearest_idx]))
 
     print("vehicle_tf:", vehicle_tf)
 

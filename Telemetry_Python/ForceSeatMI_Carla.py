@@ -163,7 +163,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=2000)
     parser.add_argument("--role-name", default="hero")
-    parser.add_argument("--profile", default="SDK - Vehicle Telemetry ACE")
+    parser.add_argument("--profile", default="SDK - Vehicle Telemetry ACE_custom")
     parser.add_argument("--vehicle-timeout", type=float, default=20.0)
     parser.add_argument("--low-pass-alpha", type=float, default=0.7)
     parser.add_argument("--print-every", type=float, default=1.0, help="seconds")
